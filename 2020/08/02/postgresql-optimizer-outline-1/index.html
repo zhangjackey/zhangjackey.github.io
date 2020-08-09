@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="cn">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
@@ -26,9 +26,10 @@
 <meta property="og:url" content="http://zhangshujie.cn/2020/08/02/postgresql-optimizer-outline-1/index.html">
 <meta property="og:site_name" content="张树杰">
 <meta property="og:description" content="小明考上了北清大学的计算机研究生，今年学校开了数据库原理的课程，小明对查询优化的部分不是很理解，虽然已经使出了洪荒之力，仍然觉得其中的部分原理有些晦涩难懂，于是小明打算问一下自己的哥哥大明，大明是一位资深的数据库内核开发的老码农，对Greenplum&#x2F;HAWQ数据库有多年的内核开发经验">
-<meta property="og:locale">
+<meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2020-08-02T00:35:06.000Z">
 <meta property="article:modified_time" content="2020-08-02T00:57:32.000Z">
+<meta property="article:author" content="张树杰">
 <meta name="twitter:card" content="summary">
 
 <link rel="canonical" href="http://zhangshujie.cn/2020/08/02/postgresql-optimizer-outline-1/">
@@ -40,7 +41,7 @@
     sidebar: "",
     isHome : false,
     isPost : true,
-    lang   : 'cn'
+    lang   : 'zh-CN'
   };
 </script>
 
@@ -84,7 +85,7 @@
     <header class="header" itemscope itemtype="http://schema.org/WPHeader">
       <div class="header-inner"><div class="site-brand-container">
   <div class="site-nav-toggle">
-    <div class="toggle" aria-label="Toggle navigation bar">
+    <div class="toggle" aria-label="切换导航栏">
       <span class="toggle-line toggle-line-first"></span>
       <span class="toggle-line toggle-line-middle"></span>
       <span class="toggle-line toggle-line-last"></span>
@@ -114,17 +115,17 @@
   <ul id="menu" class="main-menu menu">
         <li class="menu-item menu-item-home">
 
-    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
 
   </li>
         <li class="menu-item menu-item-about">
 
-    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
 
   </li>
         <li class="menu-item menu-item-archives">
 
-    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
 
   </li>
   </ul>
@@ -154,12 +155,12 @@
     
   
   
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="cn">
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
     <link itemprop="mainEntityOfPage" href="http://zhangshujie.cn/2020/08/02/postgresql-optimizer-outline-1/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/avatar.jpg">
-      <meta itemprop="name" content="">
+      <meta itemprop="name" content="张树杰">
       <meta itemprop="description" content="PostgreSQL爱好者">
     </span>
 
@@ -176,10 +177,10 @@
               <span class="post-meta-item-icon">
                 <i class="far fa-calendar"></i>
               </span>
-              <span class="post-meta-item-text">Posted on</span>
+              <span class="post-meta-item-text">发表于</span>
               
 
-              <time title="Created: 2020-08-02 08:35:06 / Modified: 08:57:32" itemprop="dateCreated datePublished" datetime="2020-08-02T08:35:06+08:00">2020-08-02</time>
+              <time title="创建时间：2020-08-02 08:35:06 / 修改时间：08:57:32" itemprop="dateCreated datePublished" datetime="2020-08-02T08:35:06+08:00">2020-08-02</time>
             </span>
 
           
@@ -234,14 +235,14 @@
 <div>
 <ul class="post-copyright">
   <li class="post-copyright-author">
-    <strong>Post author:  </strong>
+    <strong>本文作者： </strong>张树杰
   </li>
   <li class="post-copyright-link">
-    <strong>Post link: </strong>
+    <strong>本文链接：</strong>
     <a href="http://zhangshujie.cn/2020/08/02/postgresql-optimizer-outline-1/" title="PostgreSQL优化器白话(1) - 为什么优化">http://zhangshujie.cn/2020/08/02/postgresql-optimizer-outline-1/</a>
   </li>
   <li class="post-copyright-license">
-    <strong>Copyright Notice:  </strong>All articles in this blog are licensed under <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> unless stating additionally.
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
   </li>
 </ul>
 </div>
@@ -308,10 +309,10 @@
 
       <ul class="sidebar-nav motion-element">
         <li class="sidebar-nav-toc">
-          Table of Contents
+          文章目录
         </li>
         <li class="sidebar-nav-overview">
-          Overview
+          站点概览
         </li>
       </ul>
 
@@ -322,9 +323,9 @@
 
       <div class="site-overview-wrap sidebar-panel">
         <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
-    <img class="site-author-image" itemprop="image" alt=""
+    <img class="site-author-image" itemprop="image" alt="张树杰"
       src="/images/avatar.jpg">
-  <p class="site-author-name" itemprop="name"></p>
+  <p class="site-author-name" itemprop="name">张树杰</p>
   <div class="site-description" itemprop="description">PostgreSQL爱好者</div>
 </div>
 <div class="site-state-wrap motion-element">
@@ -333,7 +334,7 @@
           <a href="/archives/">
         
           <span class="site-state-item-count">4</span>
-          <span class="site-state-item-name">posts</span>
+          <span class="site-state-item-name">日志</span>
         </a>
       </div>
   </nav>
@@ -350,7 +351,7 @@
       </span>
   </div>
   <div class="cc-license motion-element" itemprop="license">
-    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
   </div>
 
 
