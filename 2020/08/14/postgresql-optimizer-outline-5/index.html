@@ -20,30 +20,32 @@
     var CONFIG = {"hostname":"zhangshujie.cn","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
   </script>
 
-  <meta name="description" content="PostgreSQL爱好者">
-<meta property="og:type" content="website">
-<meta property="og:title" content="张树杰">
-<meta property="og:url" content="http://zhangshujie.cn/index.html">
+  <meta name="description" content="小明被大明将了一军，于是心里开始合计起来，假如是外连接，可能会对某一方补NULL值，这样的话TEACHER.tno &#x3D; COURSE.tno这样的约束条件就无法构成等价类了啊，然后小在电脑上默默的敲了一个SQL语句： 1SELECT sname FROM TEACHER t LEFT JOIN COURSE c ON t.tno &#x3D; 5 AND t.tno &#x3D; c.tno;">
+<meta property="og:type" content="article">
+<meta property="og:title" content="PostgreSQL优化器白话(5) - 严格要求自己">
+<meta property="og:url" content="http://zhangshujie.cn/2020/08/14/postgresql-optimizer-outline-5/index.html">
 <meta property="og:site_name" content="张树杰">
-<meta property="og:description" content="PostgreSQL爱好者">
+<meta property="og:description" content="小明被大明将了一军，于是心里开始合计起来，假如是外连接，可能会对某一方补NULL值，这样的话TEACHER.tno &#x3D; COURSE.tno这样的约束条件就无法构成等价类了啊，然后小在电脑上默默的敲了一个SQL语句： 1SELECT sname FROM TEACHER t LEFT JOIN COURSE c ON t.tno &#x3D; 5 AND t.tno &#x3D; c.tno;">
 <meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2020-08-14T15:40:53.000Z">
+<meta property="article:modified_time" content="2020-08-14T15:44:17.000Z">
 <meta property="article:author" content="张树杰">
 <meta name="twitter:card" content="summary">
 
-<link rel="canonical" href="http://zhangshujie.cn/">
+<link rel="canonical" href="http://zhangshujie.cn/2020/08/14/postgresql-optimizer-outline-5/">
 
 
 <script id="page-configurations">
   // https://hexo.io/docs/variables.html
   CONFIG.page = {
     sidebar: "",
-    isHome : true,
-    isPost : false,
+    isHome : false,
+    isPost : true,
     lang   : 'zh-CN'
   };
 </script>
 
-  <title>张树杰</title>
+  <title>PostgreSQL优化器白话(5) - 严格要求自己 | 张树杰</title>
   
 
 
@@ -147,9 +149,10 @@
         <div class="content-wrap">
           
 
-          <div class="content index posts-expand">
+          <div class="content post posts-expand">
             
-      
+
+    
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
@@ -165,10 +168,9 @@
       <meta itemprop="name" content="张树杰">
     </span>
       <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/08/14/postgresql-optimizer-outline-5/" class="post-title-link" itemprop="url">PostgreSQL优化器白话(5) - 严格要求自己</a>
-        </h2>
+        <h1 class="post-title" itemprop="name headline">
+          PostgreSQL优化器白话(5) - 严格要求自己
+        </h1>
 
         <div class="post-meta">
             <span class="post-meta-item">
@@ -192,7 +194,7 @@
     <div class="post-body" itemprop="articleBody">
 
       
-          <p>小明被大明将了一军，于是心里开始合计起来，假如是外连接，可能会对某一方补NULL值，这样的话TEACHER.tno = COURSE.tno这样的约束条件就无法构成等价类了啊，然后小在电脑上默默的敲了一个SQL语句：</p>
+        <p>小明被大明将了一军，于是心里开始合计起来，假如是外连接，可能会对某一方补NULL值，这样的话TEACHER.tno = COURSE.tno这样的约束条件就无法构成等价类了啊，然后小在电脑上默默的敲了一个SQL语句：</p>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">SELECT sname FROM TEACHER t LEFT JOIN COURSE c ON t.tno &#x3D; 5 AND t.tno &#x3D; c.tno;</span><br></pre></td></tr></table></figure>
 
 <p>然后小明发现不但等价类可能产生不了了，而且选择下推也无法进行了，于是说：“这个语句中的TEACHER.tno=5不能下推了，因为左连接的语义是外表的所有的数据都要输出出来，如果把TEACHER.tno=5下推到TEACHER表上，那就会在做左连接之前先对TEACHER表做过滤，导致查询结果的不等价，而且由于补NULL值，等价类也生成不了了。”</p>
@@ -226,287 +228,47 @@
 <p>小明感觉自己今天好像学到了好多知识，幸好自己有个哥哥，不然很难有人这么教自己，于是发自内心的说：“OK，我又增加了新的知识，谢谢。”</p>
 <p>“不要谢我，我是雷锋，我们都是在为中华之崛起而读书，想想我们可是社会主义接班人啊。。。”大明感觉自己胸前的仿佛有红领巾在迎风飘扬，而且更加鲜艳了。</p>
 
-      
     </div>
 
     
     
     
-      <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="http://zhangshujie.cn/2020/08/05/postgresql-optimizer-outline-4/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.jpg">
-      <meta itemprop="name" content="张树杰">
-      <meta itemprop="description" content="PostgreSQL爱好者">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="张树杰">
-    </span>
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/08/05/postgresql-optimizer-outline-4/" class="post-title-link" itemprop="url">PostgreSQL优化器白话(4) - 下推！下推！</a>
-        </h2>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-calendar"></i>
-              </span>
-              <span class="post-meta-item-text">发表于</span>
-              
-
-              <time title="创建时间：2020-08-05 07:06:30 / 修改时间：07:18:17" itemprop="dateCreated datePublished" datetime="2020-08-05T07:06:30+08:00">2020-08-05</time>
-            </span>
-
-          
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <p>小明在大明家的书房里摆好了纸砚，在一份过期的报纸上挥毫泼墨：“精推细敲慎思量，雄关漫道两茫茫，夜半挑灯读诗酒，莫谈肉串与烤馕。”大明看了之后笑道：“好诗好诗，来，让我们继续夜半挑灯读优化，莫与扯淡诉衷肠。”</p>
-<p>小明说：“再歇会吧，我觉得要深度了解查询优化没希望了。”大明看出了小明对查询优化产生了一点畏难情绪，因为小明本来以为通过大明的讲解能够快速的理解查询优化的本质，但是他通过几次听取大明的讲解之后发现，查询优化器远不是几次讲解就能解决的，大明目前给他讲解的还只是在应用层面的讲解，还没有深入到分析源码阶段，仅仅如此，对小明来说理解上就已经有些困难了，看来要想深度的了解查询优化器，还需要下更大的功夫才行。</p>
-          <!--noindex-->
-            <div class="post-button">
-              <a class="btn" href="/2020/08/05/postgresql-optimizer-outline-4/#more" rel="contents">
-                阅读全文 &raquo;
-              </a>
-            </div>
-          <!--/noindex-->
         
-      
-    </div>
 
-    
-    
-    
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>张树杰
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="http://zhangshujie.cn/2020/08/14/postgresql-optimizer-outline-5/" title="PostgreSQL优化器白话(5) - 严格要求自己">http://zhangshujie.cn/2020/08/14/postgresql-optimizer-outline-5/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
       <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
 
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="http://zhangshujie.cn/2020/08/02/postgresql-optimizer-outline-3/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.jpg">
-      <meta itemprop="name" content="张树杰">
-      <meta itemprop="description" content="PostgreSQL爱好者">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="张树杰">
-    </span>
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/08/02/postgresql-optimizer-outline-3/" class="post-title-link" itemprop="url">PostgreSQL优化器白话(3) - 提升！提升！</a>
-        </h2>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-calendar"></i>
-              </span>
-              <span class="post-meta-item-text">发表于</span>
-              
-
-              <time title="创建时间：2020-08-02 09:25:08 / 修改时间：09:54:51" itemprop="dateCreated datePublished" datetime="2020-08-02T09:25:08+08:00">2020-08-02</time>
-            </span>
-
-          
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <p>小明发现到大明家里问问题不但能收获知识，还能收获大腰子和红酒，于是更加坚定了常来问问题的决心。</p>
-<p>小明和大明吃完了午饭，打开电视看一会电视剧，大明又惬意的惬意的抽起了中华烟，小明闻着二手烟有点心烦，就问大明：“哥，你整天抽抽抽，有那么好抽吗？”大明自豪的说：“咋地，咱爷爷抽烟，咱爸爸也抽烟，到我这不能断了香火，你不抽烟是不孝知道不？”</p>
-          <!--noindex-->
-            <div class="post-button">
-              <a class="btn" href="/2020/08/02/postgresql-optimizer-outline-3/#more" rel="contents">
-                阅读全文 &raquo;
-              </a>
-            </div>
-          <!--/noindex-->
         
-      
-    </div>
 
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
 
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="http://zhangshujie.cn/2020/08/02/postgresql-optimizer-outline-2/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.jpg">
-      <meta itemprop="name" content="张树杰">
-      <meta itemprop="description" content="PostgreSQL爱好者">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="张树杰">
-    </span>
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/08/02/postgresql-optimizer-outline-2/" class="post-title-link" itemprop="url">PostgreSQL优化器白话(2) - SQL进化史</a>
-        </h2>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-calendar"></i>
-              </span>
-              <span class="post-meta-item-text">发表于</span>
-              
-
-              <time title="创建时间：2020-08-02 08:56:06 / 修改时间：09:43:26" itemprop="dateCreated datePublished" datetime="2020-08-02T08:56:06+08:00">2020-08-02</time>
-            </span>
-
-          
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <p>通过大明给小明解释了查询优化器的基本原理，小明在学校的数据库原理课堂上顺风顺水，每天吃饭睡觉打豆豆，日子过得非常悠哉，不过眼看就到了数据库原理的实践课了，老师给出的题目是分析一个数据库的某一模块的实现，小明千挑万选，终于选定了要分析PostgreSQL数据库的查询优化器的实现，因为据说PostgreSQL数据库的查询优化器层（相）次（当）清（复）楚（杂），具有教科书级的示范作用。</p>
-          <!--noindex-->
-            <div class="post-button">
-              <a class="btn" href="/2020/08/02/postgresql-optimizer-outline-2/#more" rel="contents">
-                阅读全文 &raquo;
-              </a>
-            </div>
-          <!--/noindex-->
         
-      
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2020/08/05/postgresql-optimizer-outline-4/" rel="prev" title="PostgreSQL优化器白话(4) - 下推！下推！">
+      <i class="fa fa-chevron-left"></i> PostgreSQL优化器白话(4) - 下推！下推！
+    </a></div>
+      <div class="post-nav-item"></div>
     </div>
-
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
       </footer>
+    
   </article>
   
   
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="http://zhangshujie.cn/2020/08/02/postgresql-optimizer-outline-1/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.jpg">
-      <meta itemprop="name" content="张树杰">
-      <meta itemprop="description" content="PostgreSQL爱好者">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="张树杰">
-    </span>
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2020/08/02/postgresql-optimizer-outline-1/" class="post-title-link" itemprop="url">PostgreSQL优化器白话(1) - 为什么优化</a>
-        </h2>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-calendar"></i>
-              </span>
-              <span class="post-meta-item-text">发表于</span>
-              
-
-              <time title="创建时间：2020-08-02 08:35:06 / 修改时间：08:57:32" itemprop="dateCreated datePublished" datetime="2020-08-02T08:35:06+08:00">2020-08-02</time>
-            </span>
-
-          
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <p>小明考上了北清大学的计算机研究生，今年学校开了数据库原理的课程，小明对查询优化的部分不是很理解，虽然已经使出了洪荒之力，仍然觉得其中的部分原理有些晦涩难懂，于是小明打算问一下自己的哥哥大明，大明是一位资深的数据库内核开发的老码农，对Greenplum/HAWQ数据库有多年的内核开发经验</p>
-          <!--noindex-->
-            <div class="post-button">
-              <a class="btn" href="/2020/08/02/postgresql-optimizer-outline-1/#more" rel="contents">
-                阅读全文 &raquo;
-              </a>
-            </div>
-          <!--/noindex-->
-        
-      
-    </div>
-
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
-
-
   
 
 
