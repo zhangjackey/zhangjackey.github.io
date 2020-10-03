@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.0.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zhangshujie.cn","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="小明“摇醒”了晕倒的大明和牛二哥，然后说：“趁着大腰子和红酒还没送到，不如给我说说物理路径吧，虽然我们代价计算来计算去，最终还是为物理路径计算代价嘛。” 大明愤怒的说：“讲物理路径可以，不过你如果再这么吹嘘自己，咱俩就势不两立，你走你的阳关道，我过我的独木桥。” 牛二哥笑着说：“我看还是先算算走阳关道合算还是走独木桥合算吧，同样一件事，既可以走阳关道，也可以走独木桥，所谓殊途同归于尽嘛，不过我们还">
+<meta property="og:type" content="article">
+<meta property="og:title" content="PostgreSQL优化器白话(7) - 你走你的阳关道">
+<meta property="og:url" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-7/index.html">
+<meta property="og:site_name" content="张树杰">
+<meta property="og:description" content="小明“摇醒”了晕倒的大明和牛二哥，然后说：“趁着大腰子和红酒还没送到，不如给我说说物理路径吧，虽然我们代价计算来计算去，最终还是为物理路径计算代价嘛。” 大明愤怒的说：“讲物理路径可以，不过你如果再这么吹嘘自己，咱俩就势不两立，你走你的阳关道，我过我的独木桥。” 牛二哥笑着说：“我看还是先算算走阳关道合算还是走独木桥合算吧，同样一件事，既可以走阳关道，也可以走独木桥，所谓殊途同归于尽嘛，不过我们还">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-7/1.jpg">
+<meta property="og:image" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-7/2.png">
+<meta property="og:image" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-7/3.png">
+<meta property="og:image" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-7/4.png">
+<meta property="og:image" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-7/5.png">
+<meta property="og:image" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-7/6.png">
+<meta property="article:published_time" content="2020-10-03T00:36:07.000Z">
+<meta property="article:modified_time" content="2020-10-03T01:12:47.000Z">
+<meta property="article:author" content="张树杰">
+<meta property="article:tag" content="路径 Path 顺序扫描 索引扫描 位图扫描 Join">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-7/1.jpg">
+
+<link rel="canonical" href="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-7/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>PostgreSQL优化器白话(7) - 你走你的阳关道 | 张树杰</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">张树杰</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">ZhangShuJie.CN</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-7/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="张树杰">
+      <meta itemprop="description" content="PostgreSQL爱好者">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="张树杰">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          PostgreSQL优化器白话(7) - 你走你的阳关道
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+              
+
+              <time title="创建时间：2020-10-03 08:36:07 / 修改时间：09:12:47" itemprop="dateCreated datePublished" datetime="2020-10-03T08:36:07+08:00">2020-10-03</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>小明“摇醒”了晕倒的大明和牛二哥，然后说：“趁着大腰子和红酒还没送到，不如给我说说物理路径吧，虽然我们代价计算来计算去，最终还是为物理路径计算代价嘛。”</p>
+<p>大明愤怒的说：“讲物理路径可以，不过你如果再这么吹嘘自己，咱俩就势不两立，你走你的阳关道，我过我的独木桥。”</p>
+<p>牛二哥笑着说：“我看还是先算算走阳关道合算还是走独木桥合算吧，同样一件事，既可以走阳关道，也可以走独木桥，所谓殊途同归于尽嘛，不过我们还是得知道哪一个适合自己。”<a id="more"></a></p>
+<p>小明说：“大明和我说过这些阳关道和独木桥，它大体上分成扫描路径和连接路径，我查过一些查询优化器的说明，我知道扫描路径有顺序扫描路径、索引扫描路径、位图扫描路径等等，而连接路径通常有嵌套循环连接路径、哈希连接路径、归并连接路径，另外还有一些其他的路径，比如排序路径、物化路径等等。”</p>
+<p>牛二哥说：“是的，我们就来说说这些路径的含义吧。如果要获得一个表中的数据，最基础的方法就是将表中的所有的数据都遍历一遍，从中挑选出符合条件的数据，这种方式就是顺序扫描路径，顺序扫描路径的优点是其具有广泛的适用性，各种表都可以用这种方法，它缺点自然是代价通常比较高，因为要把所有的数据都遍历一遍。”大明趁着牛二哥说顺序扫描路径的时候，在纸上画了个图，说：“这个图大概就是顺序扫描路径。”</p>
+<p><img src="/2020/10/03/postgresql-optimizer-outline-7/1.jpg"> </p>
+<p>牛二哥则继续说：“如果将数据做一些预处理，比如建立一个索引，如果要想获得一个表的数据，可以通过扫描索引获得所需数据的“地址”，然后通过地址将需要的数据获取出来，尤其是在选择操作带有约束条件的情况下，在索引和约束条件共同的作用下，表中的有些数据就不用再遍历了，因为通过索引就很容易知道这些数据是不符合约束条件的，更有甚者，因为索引上也保存了数据，它的数据和关系中的数据是一致的，因此如果索引上的数据就能满足要求，就只需要扫描索引就可以获得所需的数据了，也就是说在扫描路径中还可以有索引扫描路径和快速索引扫描路径两种方式。”</p>
+<p>大明则继续为牛二哥“捧哏”，在纸上画上了索引扫描和快速索引扫描的图。</p>
+<p><img src="/2020/10/03/postgresql-optimizer-outline-7/2.png"> </p>
+<p>小明看到大明特意在图里写上了“随机读”三个字，于是问道：“我看这个索引扫描有随机读的问题，这个问题能否把它解决掉呢？也就是说即利用了索引，还避免了随机读的问题，有这样的办法吗？”</p>
+<p>牛二哥说：“索引扫描路径确实带来随机读的问题，因为索引中记录的是数据元组的地址，索引扫描是通过扫描索引获得元组地址，然后通过元组地址访问数据，索引中保存的“有序”的地址，到数据中就可能是随机的了，位图扫描就能解决这个问题，它通过位图将地址保存起来，把地址收集起来之后，然后让地址变得有序，这样就通过中间的位图把随机读消解掉了。”大明则继续在纸上画上了位图扫描的示意图。</p>
+<p><img src="/2020/10/03/postgresql-optimizer-outline-7/3.png"> </p>
+<p>不过大明不甘心一直“站在桌子里面”，也想“站到桌子外面”承担一下“逗哏”的角色，于是说道：“扫描的过程中还会结合一些特殊的情况有一些非常高效的扫描路径，比如TID扫描路径，TID实际上是元组在磁盘上的存储地址，我们能够根据TID直接就获得元组，这样查询的效率就非常高了。”</p>
+<p>牛二哥点了点头继续说到：“扫描路径通常是执行计划中的叶子结点，也就是在最底层对表进行扫描的结点，扫描路径就是为连接路径做准备的，扫描出来的数据就可以给连接路径来实现连接操作了。”</p>
+<p>大明一边在纸上画一边说道：“要对两个关系做连接，受笛卡尔积的启发，可以用一个算法复杂度是O(mn)的方法来实现，我们叫它Nestlooped Join方法，这种方法虽然复杂度比较高，但是和顺序扫描一样，胜在具有普适性。”</p>
+<p>牛二哥说：“嵌套循环连接这种方法的复杂度比较高，看上去没什么意义，但是如果Nestlooped Join的内表的路径是一个索引扫描路径，那么算法的复杂度就会降下来，索引扫描的算法复杂度是O(logn)，因此如果Nestlooped Join的内表是一个索引扫描，它的整体的算法复杂度就变成了O(mlogn)，看上去这样也是可以接受的。”</p>
+<p><img src="/2020/10/03/postgresql-optimizer-outline-7/4.png"> </p>
+<p>小明点了点头说：“嗯，索引实际上是对数据做了一些预处理，我想如果哈希连接方法就是将内表做一个哈希表，这样也等于将内表的数据做了预处理，也能方便外表的元组在里面探测吧？”</p>
+<p>牛二哥点了点头说：“假设Hash表有N个桶，内表数据均匀的分布在各个桶中，那么Hash Join的时间复杂度就是O(m * n /N)，当然，这里我们没有考虑上建立Hash表的代价。”</p>
+<p>大明则在纸上画出了Hash连接的示意图，并且补充道：“Hash连接通常只能用来做等值判断。”</p>
+<p><img src="/2020/10/03/postgresql-optimizer-outline-7/5.png"> </p>
+<p>牛二哥继续说：“如果将两个表先排序，那么就可以引入第三种连接方式，Merge Join，这种连接方式的代价主要浪费在排序上，如果两个关系的数据量都比较小，那么排序的代价是可控的，MergeJoin就是适用的，另外如果关系上有有序的索引，那么就可以不用单独排序了，这样也比较适用于MergeJoin。你看我画的这个归并连接的示意图，外表是需要排序的，而内表则借用了原有的索引的顺序，消除了排序的时间，降低了物理路径的代价。”</p>
+<p><img src="/2020/10/03/postgresql-optimizer-outline-7/6.png"> </p>
+<p>“这些路径属于SPJ路径，在PostgreSQL的优化器中，通常会先生成SPJ的路径，然后在这基础上再叠加Non-SPJ的路径，比如说聚集操作、排序操作、limit操作、分组操作。。。。”牛二哥继续补充道。</p>
+<p>“咚咚咚，咚咚咚”敲门声响了，吃了吗外卖东来了三个人最爱的大腰子，吃大腰子的感觉完全停不下来，至于优化器。。。先让它见鬼去吧。</p>
+
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>张树杰
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-7/" title="PostgreSQL优化器白话(7) - 你走你的阳关道">http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-7/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E8%B7%AF%E5%BE%84-Path-%E9%A1%BA%E5%BA%8F%E6%89%AB%E6%8F%8F-%E7%B4%A2%E5%BC%95%E6%89%AB%E6%8F%8F-%E4%BD%8D%E5%9B%BE%E6%89%AB%E6%8F%8F-Join/" rel="tag"># 路径 Path 顺序扫描 索引扫描 位图扫描 Join</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2020/10/03/postgresql-optimizer-outline-6/" rel="prev" title="PostgreSQL优化器白话(6) - 统计局旁的泉水">
+      <i class="fa fa-chevron-left"></i> PostgreSQL优化器白话(6) - 统计局旁的泉水
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2020/10/03/postgresql-optimizer-outline-8/" rel="next" title="PostgreSQL优化器白话(8) - 算计不到就受穷">
+      PostgreSQL优化器白话(8) - 算计不到就受穷 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="张树杰"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">张树杰</p>
+  <div class="site-description" itemprop="description">PostgreSQL爱好者</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">10</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zhangjackey" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zhangjackey" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhangshujie@pku.edu.cn" title="E-Mail → mailto:zhangshujie@pku.edu.cn" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://weibo.com/5379130526" title="Weibo → https:&#x2F;&#x2F;weibo.com&#x2F;5379130526" rel="noopener" target="_blank"><i class="fab fa-weibo fa-fw"></i></a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">张树杰</span>
+</div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

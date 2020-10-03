@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.0.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zhangshujie.cn","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="小明、大明和牛二哥在大坑点评里搜索附近好的饭店，搜来搜去总是感觉不太靠谱，不是卫生有问题，就是味道不够正宗，大明感叹道：“看，这就是蓝海，我们可以创业搞一个AI点评，只能推荐最优的饭店啊，我准确的找到了吃货们的痛点，这里面隐含着很大的商机啊！” 牛二哥瞥了它一眼说：“AI推荐当然好啊，可是要推荐的准才行啊，可是一个人一个口味，你这个需求太‘智能’了，我估计不好弄。” 小明突然想到自己最近在学校的算">
+<meta property="og:type" content="article">
+<meta property="og:title" content="PostgreSQL优化器白话(9) - 找饭店">
+<meta property="og:url" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-9/index.html">
+<meta property="og:site_name" content="张树杰">
+<meta property="og:description" content="小明、大明和牛二哥在大坑点评里搜索附近好的饭店，搜来搜去总是感觉不太靠谱，不是卫生有问题，就是味道不够正宗，大明感叹道：“看，这就是蓝海，我们可以创业搞一个AI点评，只能推荐最优的饭店啊，我准确的找到了吃货们的痛点，这里面隐含着很大的商机啊！” 牛二哥瞥了它一眼说：“AI推荐当然好啊，可是要推荐的准才行啊，可是一个人一个口味，你这个需求太‘智能’了，我估计不好弄。” 小明突然想到自己最近在学校的算">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-9/1.png">
+<meta property="og:image" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-9/2.png">
+<meta property="og:image" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-9/3.png">
+<meta property="og:image" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-9/4.png">
+<meta property="article:published_time" content="2020-10-03T01:01:40.000Z">
+<meta property="article:modified_time" content="2020-10-03T01:13:29.000Z">
+<meta property="article:author" content="张树杰">
+<meta property="article:tag" content="动态规划 自底向上 自顶向下">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-9/1.png">
+
+<link rel="canonical" href="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-9/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>PostgreSQL优化器白话(9) - 找饭店 | 张树杰</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">张树杰</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">ZhangShuJie.CN</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-9/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="张树杰">
+      <meta itemprop="description" content="PostgreSQL爱好者">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="张树杰">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          PostgreSQL优化器白话(9) - 找饭店
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+              
+
+              <time title="创建时间：2020-10-03 09:01:40 / 修改时间：09:13:29" itemprop="dateCreated datePublished" datetime="2020-10-03T09:01:40+08:00">2020-10-03</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>小明、大明和牛二哥在大坑点评里搜索附近好的饭店，搜来搜去总是感觉不太靠谱，不是卫生有问题，就是味道不够正宗，大明感叹道：“看，这就是蓝海，我们可以创业搞一个AI点评，只能推荐最优的饭店啊，我准确的找到了吃货们的痛点，这里面隐含着很大的商机啊！”</p>
+<p>牛二哥瞥了它一眼说：“AI推荐当然好啊，可是要推荐的准才行啊，可是一个人一个口味，你这个需求太‘智能’了，我估计不好弄。”</p>
+<p>小明突然想到自己最近在学校的算法课上老师讲过一些求最优解问题的方法，然后说：“我知道，我知道，我最近在算法课上学过一些最优解问题的解决方法，应该可以用得上。”</p>
+<a id="more"></a>
+
+<p>牛二哥叹口气道：“可是这些方法用到优化器里都不一定够用，何况用到一个更加智能的项目上呢？”</p>
+<p>“嗯？优化器里也用到了最优解问题的方法了吗？我们学过动态规划、贪心算法。。。”小明如数家珍的说起来。</p>
+<p>大明说：“用到了啊， 虽然物理路径看上去也不多，但实际上枚举起来，它的搜索空间也不小。例如在扫描路径中，我们就可以有顺序扫描、索引扫描和位图扫描，假如一个表上有多个索引，那么就可能产生多个不同的索引扫描，那么哪个索引扫描路径好呢？而索引扫描和顺序扫描、位图扫描相比，哪个好呢？”</p>
+<p>大明看着小明迷离的眼神，停顿了一下，给他足够的思考空间之后继续说道：“数据库路径的搜索方法通常有3种类型：自底向上方法、自顶向下方法、随机方法，而PostgreSQL采用了其中的两种方法呢。”</p>
+<p>“采用了哪两种方法呢？”牛二哥明知故问道。</p>
+<p>“采用了自底向上的方法和随机方法，其中自底向上的方法是采用的动态规划方法，而随机方法采用的是遗传算法。”</p>
+<p>“那有谁使用了自顶向下的方法呢？”牛二哥继续“捧哏”道。</p>
+<p>“嗯。。。这个嘛，Pivotal公司的开源优化器ORCA用的就是自顶向下的方法。可以让牛二先给你说说怎么样用动态规划方法搜索最优物理路径。”</p>
+<p>牛二哥拿出纸来，在纸上画了几个圈，然后说：“这代表4个表，自底向上嘛，所以是从底下向上堆积，这是最底层，我们叫它第一层”。</p>
+<p><img src="/2020/10/03/postgresql-optimizer-outline-9/1.png"> </p>
+<p>“动态规划方法首先考虑两个表的连接，其中优先考虑有连接关系的表进行连接，两个表的连接可以建立一个新的表，我们把这些新表叫做第二层。”牛二哥通过连线，产生了一些新的“表”。</p>
+<p><img src="/2020/10/03/postgresql-optimizer-outline-9/2.png"> </p>
+<p>“第二层的表和第一层的表再连接，可以生成基于3个表连接的新的‘表’，这样就又向前推进了一层，我们产生了第三层”</p>
+<p><img src="/2020/10/03/postgresql-optimizer-outline-9/3.png"> </p>
+<p>“然后再用第三层的表和第一层的表进行连接，最终生成整个问题的最优路径。”</p>
+<p><img src="/2020/10/03/postgresql-optimizer-outline-9/4.png"> </p>
+<p>“可是，这不就是穷举吗？”小明问道。</p>
+<p>牛二哥解释说：“动态规划有两个特点，一个是要重复的利用子问题的解，这样能减少计算量，降低复杂度，另外一点就是通过子问题的最优解能够构造出最终的最优解，也就是说需要具有最优子结构的性质，所以动态规划的复杂度和穷举是不一样的。”</p>
+<p>大明继续解释说：“还有，虽然你看图里的连线比较多，但在实际情况里，并不是所有的圈圈之间都能产生连线，连接关系也有个合法性的问题嘛，所以复杂度是可以控制住的。”</p>
+<p>小明感觉好像明白了一点，然后赶紧追问：“那遗传算法呢？”</p>
+<p>大明说：“虽然动态规划的复杂度是可以控制的，但是如果表比较多，它的搜索空间还是很大，所以如果在表比较多的时候，可以尝试使遗传算法，这个算法获得的不一定是全局最优解，它获得的可能是局部最优解。”</p>
+<p>“那遗传算法是怎么实现物理路径搜索的呢？”小明问。</p>
+<p>牛二哥去大明的书柜里找到了一本算法的书，恰好里面有遗传算法的介绍，于是朗读了起来：“遗传算法的实现步骤如下：1）种群初始化：对基因进行编码，并通过对基因进行随机的排列组合，生成多个染色体，这些染色体构成一个新的种群，另外，在生成染色体的过程中同时计算染色体的适应度；2）选择染色体：通过随机选择（实际上通过基于概率的随机数生成算法，这样能倾向于选择出优秀的染色体），选择出用于交叉和变异的染色体；3）交叉操作：染色体进行交叉，产生新的染色体并加入到种群；4）变异操作：对染色体进行变异操作，产生新的染色体并加入到种群；5）适应度计算：对不良的染色体进行淘汰。”</p>
+<p>大明笑着说：“尽信书不如无书，我来说一下遗传算法是如何解决货郎问题的。我们可以将城市作为基因，走遍各个城市的路径作为染色体，路径的总长度作为适应度，适应度函数负责筛选掉比较长的路径，保留较短的路径，算法的步骤如下：1）对各个城市进行编号，将各个城市根据编号进行排列组合，生成多条新的路径（染色体），然后根据各城市间的距离计算整体路径长度（适应度），多条新路径构成一个种群；2）选择两个路径进行交叉（需要注意交叉生成新染色体中不能重复出现同一个城市），对交叉操作产生的新路径计算路径长度；3）随机选择染色体进行变异（通常方法是交换城市在路径中的位置），对变异操作后的新路径计算路径长度；4）对种群中所有路径进行基于路径长度有小到大排序，淘汰掉排名靠后的路径。”大明一口气说完了整个流程，长出了一口气，然后继续说：“怎么样，是不是so easy?”</p>
+<p>小明想了想牛二哥和大明说的流程，然后说，“我来猜想一下PostgreSQL是如何实现遗传算法的，PostgreSQL应该是模拟了解决货郎问题的方法，它将表作为基因、最终生成的执行计划作为染色体、执行计划的总代价作为适应度，适应度函数则是基于路径的代价进行筛选，对不对？”</p>
+<p>牛二哥赞叹道：“说得非常好，不过需 PostgreSQL数据库的基因算法实现方式和通常的遗传算法略有不同在于其没有变异的过程，只通过交叉产生新的染色体，不过这都不是重点了。”</p>
+<p>大明说：“哎哎哎，我们不是在搜索饭店吗，怎么搜索起来最优路径了？不要再说优化器了，再晚点饭都没得吃了。”<br>于是三个人又热火朝天的搜起饭店来了。</p>
+
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>张树杰
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-9/" title="PostgreSQL优化器白话(9) - 找饭店">http://zhangshujie.cn/2020/10/03/postgresql-optimizer-outline-9/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%8A%A8%E6%80%81%E8%A7%84%E5%88%92-%E8%87%AA%E5%BA%95%E5%90%91%E4%B8%8A-%E8%87%AA%E9%A1%B6%E5%90%91%E4%B8%8B/" rel="tag"># 动态规划 自底向上 自顶向下</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2020/10/03/postgresql-optimizer-outline-8/" rel="prev" title="PostgreSQL优化器白话(8) - 算计不到就受穷">
+      <i class="fa fa-chevron-left"></i> PostgreSQL优化器白话(8) - 算计不到就受穷
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2020/10/03/postgresql-optimizer-outline-10/" rel="next" title="PostgreSQL优化器白话(10) - 我再补充两句">
+      PostgreSQL优化器白话(10) - 我再补充两句 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="张树杰"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">张树杰</p>
+  <div class="site-description" itemprop="description">PostgreSQL爱好者</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">10</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zhangjackey" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zhangjackey" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhangshujie@pku.edu.cn" title="E-Mail → mailto:zhangshujie@pku.edu.cn" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://weibo.com/5379130526" title="Weibo → https:&#x2F;&#x2F;weibo.com&#x2F;5379130526" rel="noopener" target="_blank"><i class="fab fa-weibo fa-fw"></i></a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">张树杰</span>
+</div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
