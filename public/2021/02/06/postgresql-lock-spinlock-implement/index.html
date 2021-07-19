@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.0.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zhangshujie.cn","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="经过上次的《《PostgreSQL优化器白话》中大明和牛二哥对PostgreSQL优化器的概要的讲解，小明感到自己已经深深的爱上了数据库内核，小明在GitChat网站上购买了《PostgreSQL优化器入门》的文字网课，还跑到实体书店买了本《PostgreSQL技术内幕：查询优化深度探索》，每天对照着网课和书上的内容仔细研读PostgreSQL的优化器的实现，准备在毕业之后去从事数据库内核开发的工">
+<meta property="og:type" content="article">
+<meta property="og:title" content="PostgreSQL中的锁 - 自旋锁">
+<meta property="og:url" content="http://zhangshujie.cn/2021/02/06/postgresql-lock-spinlock-implement/index.html">
+<meta property="og:site_name" content="张树杰">
+<meta property="og:description" content="经过上次的《《PostgreSQL优化器白话》中大明和牛二哥对PostgreSQL优化器的概要的讲解，小明感到自己已经深深的爱上了数据库内核，小明在GitChat网站上购买了《PostgreSQL优化器入门》的文字网课，还跑到实体书店买了本《PostgreSQL技术内幕：查询优化深度探索》，每天对照着网课和书上的内容仔细研读PostgreSQL的优化器的实现，准备在毕业之后去从事数据库内核开发的工">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-02-06T08:18:10.000Z">
+<meta property="article:modified_time" content="2021-02-06T08:25:47.000Z">
+<meta property="article:author" content="张树杰">
+<meta property="article:tag" content="lock spinlock transaction postgresql">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="http://zhangshujie.cn/2021/02/06/postgresql-lock-spinlock-implement/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>PostgreSQL中的锁 - 自旋锁 | 张树杰</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">张树杰</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">ZhangShuJie.CN</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://zhangshujie.cn/2021/02/06/postgresql-lock-spinlock-implement/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="张树杰">
+      <meta itemprop="description" content="PostgreSQL爱好者">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="张树杰">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          PostgreSQL中的锁 - 自旋锁
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+              
+
+              <time title="创建时间：2021-02-06 16:18:10 / 修改时间：16:25:47" itemprop="dateCreated datePublished" datetime="2021-02-06T16:18:10+08:00">2021-02-06</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>经过上次的<a href="/2020/10/03/postgresql-optimizer-outline-10/" title="《《PostgreSQL优化器白话》">《《PostgreSQL优化器白话》</a>中大明和牛二哥对PostgreSQL优化器的概要的讲解，小明感到自己已经深深的爱上了数据库内核，小明在GitChat网站上购买了《PostgreSQL优化器入门》的文字网课，还跑到实体书店买了本《PostgreSQL技术内幕：查询优化深度探索》，每天对照着网课和书上的内容仔细研读PostgreSQL的优化器的实现，准备在毕业之后去从事数据库内核开发的工作。</p>
+<p>不过，最近在学校的数据库原理课程学到了并发控制的部分，这部分对小明来说有点难度，因为小明没有对数据库的原理进行过实践，无法理解锁的重要性，于是小明又来到自己的哥哥大明家里向大明请教PostgreSQL是如何实现并发控制的。</p>
+<a id="more"></a>
+
+<p>大明说：“并发控制的部分比较繁杂，我们今天主要关注PostgreSQL锁的实现，不过我们先从最底层的部分开始，先来看一看PostgreSQL是如何实现一个自旋锁的，你知道自旋锁吗？”</p>
+<p>小明感觉这个概念好像在哪里听过，但又没什么印象，于是小声的说：“不知道。”</p>
+<p>大明哈哈一笑，嘲讽道：“这么轻易就说不知道？自信一点！大胆一点！再问你一遍，知道不知道自旋锁？！”</p>
+<p>小明感觉受到了很大的鼓舞，于是大声的说：“老子不知道！”</p>
+<p>“嗯，很自信嘛。。。来，让朕给你讲讲。PostgreSQL的锁的概念有很多种，比如常见的表锁、行锁、页锁、轻量锁、自旋锁等等，这里面最底层的是实现是自旋锁，它和硬件直接接触，并且屏蔽各种不同硬件和操作系统的细节，通常利用硬件提供的原子操作指令来实现。”</p>
+<p>“那为什么要使用这种锁呢？”</p>
+<p>“自旋锁是一种互斥锁，它通常是用来保护临界区，这种保护的方式是一种‘不是你死就是我活’的方式，比如说我通过锁获取到这个临界区的访问权限，那么其他人就必须等待，那它怎么等待呢？”</p>
+<p>“我知道！”小明抢答道：“如果干等着的话，CPU就不能被充分的利用，所以我知道系统里有一个sleep函数能很好的解决这个问题，如果我们不能获取到锁，那么我们可以睡一会，再来获取锁，我听说sleep函数可以释放CPU资源，这样其他进程或者线程就能充分的利用CPU了，这样CPU即被充分的利用，我也能不停的对锁发出请求，岂不是两全其美。”小明伸了伸衣袖，对大明说：“拿笔来！让我展示一下coding的能力。”</p>
+<p>大明给他找了纸和笔，调侃道“看上去很高调嘛。。。”</p>
+<p>“我也想低调，但是实力不允许啊！”小明一边说，一边在纸上写出了自己的蓝图：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">while(!spinlock_aquire(&amp;lock))</span><br><span class="line">    sleep(100);</span><br></pre></td></tr></table></figure>
+
+<p>大明接过笔在小明写的代码上画了一个大大的对勾，对小明的行为表示肯定，然后又画了一个X，解释道：“虽然看上去合理，但是这里存在一个问题，有时我们要保护的临界区只有区区几个指令，锁的持有者实际上占有锁的时间是极短的，换句话说锁的请求者实际上不用等太长时间就能获得锁，这时候就需要考虑这个睡眠是不是合适了。”</p>
+<p>小明说：“有什么不合适的？不睡眠难道一直占着CPU资源不放，浪费CPU资源？这简直是占着茅坑XXX嘛。”</p>
+<p>“对，就是占着茅坑XXX，你说的睡眠模式实际上进行了CPU上下文的切换，但这种切换需要非常多的时钟周期，如果我们要保护的临界区很短，这种切换的代价就显得有点大了，所以释放CPU资源还不如占着好。”</p>
+<p>小明想了想，说：“哦，那这种锁有点像一个小朋友遇到了想要的玩具，家长不给买的时候的行为。。。”</p>
+<p>大明笑着说：“是的，你小时候就是这样，而且，你在地上打滚的时候从来不休息，一直处于滚动的状态，所以你很小的时候就理解了自旋锁的本质，就是忙等。”</p>
+<p><strong>自旋锁的伪码</strong></p>
+<p>小明继续说：“这样的话，自旋锁的实现就比较容易了，也就是不sleep嘛，我来把它写出来。”说着开始在纸上开始写自旋锁实现的伪码，因为已经了解了自旋锁的基本原理，所以写代码的过程是极为顺利的，小明一边写一边暗暗佩服自己：都是九年义务教育，怎么我就这么优秀呢，像我这样优秀的人，本该灿烂过一生啊。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;&#x2F;让我们假设lock参数是一个线程或进程共享变量</span><br><span class="line">int spinlock_acquire(int *lock)</span><br><span class="line">&#123;</span><br><span class="line">    while(*lock !&#x3D; 0)</span><br><span class="line">        continue;</span><br><span class="line">    *lock &#x3D; 1;</span><br><span class="line">    return *lock;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">int spinlock_release(int *lock)</span><br><span class="line">&#123;</span><br><span class="line">    *lock &#x3D; 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>大明看着小明洋洋自得的写的这段代码，鄙视到：“你觉得这样就能实现一个自旋锁吗？谬矣。”说着拿笔在小明写的自旋锁上画了一个大大的X，然后一边打开电脑，一边继续说：“让我们看看你错在哪里。”说着啪啪啪的在编译器里敲出了和小明同样逻辑的代码，编译之后，通过代码调试工具查看了spinlock_acquire函数的汇编代码：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">spinlock1&#96;spinlock_acquire:</span><br><span class="line">    0x100000f10 &lt;+0&gt;:  pushq  %rbp</span><br><span class="line">    0x100000f11 &lt;+1&gt;:  movq   %rsp, %rbp</span><br><span class="line">    0x100000f14 &lt;+4&gt;:  movq   %rdi, -0x8(%rbp)</span><br><span class="line">    0x100000f18 &lt;+8&gt;:  movq   -0x8(%rbp), %rax</span><br><span class="line">    0x100000f1c &lt;+12&gt;: cmpl   $0x0, (%rax)</span><br><span class="line">    0x100000f1f &lt;+15&gt;: je     0x100000f2a </span><br><span class="line">    0x100000f25 &lt;+21&gt;: jmp    0x100000f18</span><br><span class="line">    0x100000f2a &lt;+26&gt;: movq   -0x8(%rbp), %rax</span><br><span class="line">    0x100000f2e &lt;+30&gt;: movl   $0x1, (%rax)</span><br><span class="line">    0x100000f34 &lt;+36&gt;: movq   -0x8(%rbp), %rax</span><br><span class="line">    0x100000f38 &lt;+40&gt;: movl   (%rax), %eax</span><br><span class="line">    0x100000f3a &lt;+42&gt;: popq   %rbp</span><br><span class="line">    0x100000f3b &lt;+43&gt;: retq</span><br><span class="line">    0x100000f3c &lt;+44&gt;: nopl   (%rax)</span><br></pre></td></tr></table></figure>
+
+<p>大明指着屏幕上的汇编代码说：“这段代码是无法作为锁的实现的，因为上面的操作缺乏原子性，比如对lock对应的值是否为0（*lock != 0）的判断就不是一个原子操作，它是通过movq   -0x8(%rbp), %rax和cmpl   $0x0, (%rax)两个指令来实现。假如有两个线程来获取同一个锁，那么会发生什么情况呢？”说着大明在纸上画了一个示意图：</p>
+<p>“你看，这时候问题就出现了，线程A和线程B同时觉得当前的lock中的值是0，也就是说他们两个都能获得锁资源，也就出现了两个线程同时获得锁的情况，你觉得这还合理吗？”</p>
+<p>小明羞愧的低下了头，怪不得自己二十多年到头来，还在人海里浮沉，原来是因为不懂汇编语言啊。</p>
+<p>看着小明羞愧的表情，大明解释道：“C语言的一条语句可能对应几条汇编指令，在执行期间无法保证它的原子性，所以在高级语言的层面需要借助一些算法或者底层的指令来实现临界区的同步功能，如果想通过高级语言的算法来实现临界区的同步功能，也不是补可以，但是需要使用一些比较精妙的算法（比如Peterson算法），这些方法都有很大的局限性，现在已经很少使用这些方法了，今天我们需要关注的是目前的计算机提供的一些硬件指令，通过这些指令，我们可以借助这些指令来实现临界区的同步功能。”</p>
+<p><strong>TAS VS CAS</strong></p>
+<p>小明怯怯的问道：“是不是我们学操作系统课程的时候说的那些原子指令？”</p>
+<p>“对的，现在大部分硬件都支持两种类型的原子操作指令，比如TAS和CAS指令，下面我们给出他们的伪码。”说着，大明拿了一张新的白纸，边写边说道：“TEST-AND-SET 简称为TAS，它的流程是向内存变量写入1，然后返回内存变量的原值，伪码是这样的。”</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">int TAS(int *lock)</span><br><span class="line">&#123;</span><br><span class="line">    int temp &#x3D; *lock;</span><br><span class="line">    *lock &#x3D; 1;</span><br><span class="line">    return *lock;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>“COMPARE-AND-SWAP简称CAS，它的流程是比较锁中的值和期望值，如果锁中的值和期望值相同，则设置为新值，返回true,否则不设置新值，返回false，它的伪码是这样的。”大明继续写道。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">int CAS(int *lock, int expect, int new)</span><br><span class="line">&#123;</span><br><span class="line">    if(*lock &#x3D;&#x3D; expect)</span><br><span class="line">    &#123;</span><br><span class="line">        *lock &#x3D; new;</span><br><span class="line">        return true;</span><br><span class="line">    &#125;</span><br><span class="line">    return false;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>大明提示道：“注意，上面的伪码是借用高级语言的形式来描述这两种类型的指令的含义，实际上它是一个完整的原子操作，在X86架构的CPU中，分别提供了XCHG指令和CMPXCHG指令来实现TAS和CAS操作，PostgreSQL在X86架构下采用的是基于XCHG指令的TAS来实现的自旋锁。”</p>
+<p>小明兴奋的说：“我已经迫不及待的想看看PostgreSQL是怎么使用TAS指令来实现自旋锁的了。”</p>
+<p>大明看着小明手舞足蹈的神态，做了一个calm down的手势，然后说：“稍安勿躁，不要急，再过一会精神病院的救护车就到了。在这之前我们先来谈一下TTAS。”</p>
+<p>“TTAS？感觉像是TEST AND TEST-AND-SET？”</p>
+<p>“是的，TAS虽然已经足够我们使用，但是也带来一个问题，大部分CPU实现TAS的方法是锁住总线，一旦锁住总线就等于一个CPU占用了整个总线，而频繁的锁住总线会降低CPU的使用效率，所以在进入TAS之前，我们可以先做一个粗略的检测，这个检测不在原子操作之中，但是它可以让我们快速的知道目前锁的状态，如果第一个TEST检测到锁已经被占用了，那么我们就再等一会，就不用进行TAS了，这样就避免了锁住总线，如果第一个TEST发现锁没有被占用，那么就值得去做TAS。”</p>
+<p>小明说：“但在第一个TEST和TEST-AND-SET之间，锁的状态可能会被其他CPU上的进程修改掉吧？”</p>
+<p>“是的，所以这个TEST只是我们提高性能的一个手段。比如在PostgreSQL数据库中，它就是采用的TTAS的方法。”说着，大明打开了PostgreSQL源代码，找到了TAS实现的部分：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">static __inline__ int</span><br><span class="line">tas(volatile slock_t *lock)</span><br><span class="line">&#123;</span><br><span class="line">   register slock_t _res &#x3D; 1;</span><br><span class="line"></span><br><span class="line">   __asm__ __volatile__(</span><br><span class="line">      &quot;  cmpb   $0,%1  \n&quot;</span><br><span class="line">      &quot;  jne       1f    \n&quot;</span><br><span class="line">      &quot;  lock         \n&quot;</span><br><span class="line">      &quot;  xchgb  %0,%1  \n&quot;</span><br><span class="line">      &quot;1: \n&quot;</span><br><span class="line">:     &quot;+q&quot;(_res), &quot;+m&quot;(*lock)</span><br><span class="line">:</span><br><span class="line">:     &quot;memory&quot;, &quot;cc&quot;);</span><br><span class="line">   return (int) _res;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>大明一边用鼠标在编译器里划住了tas函数，一边说：“从这段汇编代码可以看出，CMP指令和下面的XCHG不能组成一个原子操作，比如一个线程B已经持有了锁，线程A做了CMP指令也发现了有其他线程已经占有了锁资源，于是他就会JNE跳过XCHG指令，但是很可能在CMP指令之后，线程B就立即释放了锁资源。”大明在纸上画了一个示意图：</p>
+<p>“XCHG指令会尝试交换两个操作数，如果想要获得一个锁，也就是说我们打算在‘锁对应的值是0的情况下把锁的值设置为1’，同时我们还可以用0和1来代表TEST-AND-SET是否成功，那么对上面的汇编代码翻译成高级语言就变成下面这样。”大明开始在纸上写出了对应于PostgreSQL的tas函数的伪码：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">static __inline__ int</span><br><span class="line">tas(volatile slock_t lock)</span><br><span class="line">&#123;</span><br><span class="line">   register slock_res &#x3D; 1;</span><br><span class="line"></span><br><span class="line">   if(*lock !&#x3D; 1)  &#x2F;&#x2F;CMP指令</span><br><span class="line">   &#123;</span><br><span class="line">      &#x2F;&#x2F;下面3行是原子操作，对应XCHG</span><br><span class="line">       int temp &#x3D; *lock; </span><br><span class="line">lock &#x3D; 1;  &#x2F;&#x2F;同*lock &#x3D; res;</span><br><span class="line">res &#x3D; temp;</span><br><span class="line">    &#125;</span><br><span class="line">   return (int) _res;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>小明听得云里雾里的，只好说：“感觉听着有点吃力，”</p>
+<p>大明笑着说，没关系的：“你可以把这些概念记住，有时间回想一下，好好消化消化。”</p>
+<p>小明痛苦的说：“可是你说的这些都是便秘的知识，容易消化不良啊。”</p>
+<p>大明说：“不要担心嘛，自旋锁的事才刚刚开始，有了TAS我们才能继续实现PostgreSQL的自旋锁，让我们来看看自旋锁的实现吧。”</p>
+<p><strong>PostgreSQL的自旋锁</strong></p>
+<p>大明继续说道：“在有些CPU架构下，PostgreSQL没有直接使用TTAS，而是先实现了TAS，然后借用TAS_SPIN函数(或者说宏)来实现的自旋锁。”</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">#define TAS_SPIN(lock)  (*(lock) ? 1 : TAS(lock))</span><br></pre></td></tr></table></figure>
+
+<p>“有了TAS_SPIN我们是不是就很容易实现一个自旋锁了呢？”大明问道。</p>
+<p>小明想了想说：“让我来写一下，看看这次能不能实现一个可用的自旋锁。”说着小明在纸上写了起来：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">void spinlock_acquire(int *lock)</span><br><span class="line">&#123;</span><br><span class="line">    while(TAS_SPIN(lock));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>写完之后，小明又推演了几遍，感觉没什么错误了，于是帅气的摇了摇头，说道：“怎么样，是不是很佩服我这样美貌与智慧并重的人？”</p>
+<p>“嗯，这个自旋锁是可用的，不过美貌和智慧你都没做到，你做到了病重，精神病院的救护车还没到，我们还有时间继续说自旋锁。”大明调侃道，“我们还能继续优化它。比如适当的偷懒，这种自旋目的是不放弃CPU，但也没必要不停的旋，我们可以用空指令来适当的让CPU歇一会，而不必过度旋转，旋转太频繁了浪费电，我们使用nop指令来进行偷懒”，说着大明在PostgreSQL的源代码中指出了spin_delay函数。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">static __inline__ void</span><br><span class="line">spin_delay(void)</span><br><span class="line">&#123;</span><br><span class="line">   __asm__ __volatile__(</span><br><span class="line">      &quot; rep; nop       \n&quot;);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>大明继续说道：“另外，我们也应该处理一些特殊的情况，比如尝试了很多次TAS之后仍然无法获得锁资源，那么就进入sleep，也就是交出CPU资源，需要注意的是睡眠的时间是随机的，但不能超出上下界。”</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;&#x2F;第一次sleep的时间，sleep的时间逐步递增，第一次是1000微秒</span><br><span class="line">if (status-&gt;cur_delay &#x3D;&#x3D; 0) &#x2F;* first time to delay? *&#x2F;</span><br><span class="line">   status-&gt;cur_delay &#x3D; MIN_DELAY_USEC;</span><br><span class="line"></span><br><span class="line">pg_usleep(status-&gt;cur_delay);</span><br></pre></td></tr></table></figure>
+
+<p>“当然，如果旋转了很长时间，仍然没有办法获得锁资源，就进入自杀模式，因为我们假设自旋锁保护的临界区都很短，如果很长时间还获取不到锁资源，那么就可能出问题了。”</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">if (++(status-&gt;delays) &gt; NUM_DELAYS)</span><br><span class="line">   s_lock_stuck(status-&gt;file, status-&gt;line, status-&gt;func);</span><br></pre></td></tr></table></figure>
+
+<p>“这基本上就是PostgreSQL自旋锁的实现了，不过还需要注意我们只谈了X86架构下的实现方法，在不同的CPU架构下，TAS的实现是不同的，比如在MIPS架构下提供的是ll和sc指令，我们要借助这两个指令来实现TAS。”</p>
+<p>“明白了，看来我需要学的东西还有很多。”小明沮丧的说。</p>
+<p>“不要这么悲观嘛，你不了解这些知识主要是因为你还没有参加工作，还是学生，还在学习的阶段，等你参加工作了，时间长了，也就习惯了。”大明笑着说，“反正债多了不愁，在我们结束之前，再来补充一下自旋锁释放的知识。”</p>
+<p>“锁的释放，直接把值设置成0就可以了嘛。”</p>
+<p>“bingo！是的，我也是这么认为的，但是还有一个注意事项。”</p>
+<p>“什么注意事项，难道这还有什么幺蛾子吗？”小明惊奇道。</p>
+<p>“有一个很大的幺蛾子，就是目前很多CPU为了提高执行效率，实现了乱序执行功能，关于乱序执行的具体内容我们就不展开了，以免你不好消化。不过需要记住的是，如果把释放锁写成只是简单设置lock的值，由于乱序执行的作用，有些临界区中的指令可能会在lock释放后才执行，这就相当于两个进（线）程共同进入了临界区，那肯定会出问题，所以我们可以采用内存屏障的方式来保证锁释放的有序性，你看，PostgreSQL的有些锁释放时用的是这种方式。”说着，大明在源代码中标出了一行锁释放的代码：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">do &#123; __memory_barrier(); *(lock) &#x3D; 0; &#125; while (0)</span><br></pre></td></tr></table></figure>
+
+<p>“好吧，我记下了，念了这么多年的书，我觉得还是幼儿园适合我。”小明苦着脸说。<br>“没事，中午我们去吃点好的，弥补一下你受伤的心灵，我准备一下，咱们马上就出发。”</p>
+
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>张树杰
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="http://zhangshujie.cn/2021/02/06/postgresql-lock-spinlock-implement/" title="PostgreSQL中的锁 - 自旋锁">http://zhangshujie.cn/2021/02/06/postgresql-lock-spinlock-implement/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/lock-spinlock-transaction-postgresql/" rel="tag"># lock spinlock transaction postgresql</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2020/10/03/postgresql-optimizer-outline-10/" rel="prev" title="PostgreSQL优化器白话(10) - 我再补充两句">
+      <i class="fa fa-chevron-left"></i> PostgreSQL优化器白话(10) - 我再补充两句
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2021/07/20/postgresql-lock-lwlock-implement/" rel="next" title="PostgreSQL中的锁 - 轻量锁">
+      PostgreSQL中的锁 - 轻量锁 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="张树杰"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">张树杰</p>
+  <div class="site-description" itemprop="description">PostgreSQL爱好者</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">12</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">5</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zhangjackey" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zhangjackey" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhangshujie@pku.edu.cn" title="E-Mail → mailto:zhangshujie@pku.edu.cn" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i></a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://weibo.com/5379130526" title="Weibo → https:&#x2F;&#x2F;weibo.com&#x2F;5379130526" rel="noopener" target="_blank"><i class="fab fa-weibo fa-fw"></i></a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">张树杰</span>
+</div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
