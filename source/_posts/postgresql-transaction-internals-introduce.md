@@ -13,6 +13,8 @@ tags: transaction 事务 新书 技术内幕 PostgreSQL
 
 ![](./postgresql-transaction-internals-introduce/introduce.jpg) 
 
+<!--more-->
+
 **为什么写这本书？**
 
 近年来，我一直从事与PostgreSQL相关的数据库内核开发工作，主攻方向是SQL引擎中的查询优化，对事务的了解仅停留在理论层面，虽然对事务的性质、隔离级别也能讲一番大道理，但终究华而不实，于探究事务的本质无益。所谓“纸上得来终觉浅，绝知此事要躬行”，在完成了《PostgreSQL技术内幕：查询优化深度探索》一书之后，我就开始了事务的探索之旅。
