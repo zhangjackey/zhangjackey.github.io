@@ -20,19 +20,20 @@
     var CONFIG = {"hostname":"zhangshujie.cn","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
   </script>
 
-  <meta name="description" content="小明被大明将了一军，于是心里开始合计起来，假如是外连接，可能会对某一方补NULL值，这样的话TEACHER.tno &#x3D; COURSE.tno这样的约束条件就无法构成等价类了啊，然后小在电脑上默默的敲了一个SQL语句：">
+  <meta name="description" content="【PGConf2021】这里给大家分享的是PostgreSQL发展历史中的一些比较大的特性，通过这些重要特性，能够看出它是如何逐步发展为世界上最先进的开源数据库的，另外，通过了解这些特性，也能了解PostgreSQL的当前的整体架构，从架构视角检视一个数据库实现的必备属性，最后，我们从未来发展的角度列举几个PostgreSQL数据库在后续发展中比较重要的方向，也算把握PostgreSQL的未来。">
 <meta property="og:type" content="article">
-<meta property="og:title" content="PostgreSQL优化器白话(5) - 严格要求自己">
-<meta property="og:url" content="http://zhangshujie.cn/2020/08/14/postgresql-optimizer-outline-5/index.html">
+<meta property="og:title" content="【视频】PostgreSQL的过去、现在和将来">
+<meta property="og:url" content="http://zhangshujie.cn/2021/12/15/postgresql-history-now-future-pgconf2021vedio/index.html">
 <meta property="og:site_name" content="张树杰">
-<meta property="og:description" content="小明被大明将了一军，于是心里开始合计起来，假如是外连接，可能会对某一方补NULL值，这样的话TEACHER.tno &#x3D; COURSE.tno这样的约束条件就无法构成等价类了啊，然后小在电脑上默默的敲了一个SQL语句：">
+<meta property="og:description" content="【PGConf2021】这里给大家分享的是PostgreSQL发展历史中的一些比较大的特性，通过这些重要特性，能够看出它是如何逐步发展为世界上最先进的开源数据库的，另外，通过了解这些特性，也能了解PostgreSQL的当前的整体架构，从架构视角检视一个数据库实现的必备属性，最后，我们从未来发展的角度列举几个PostgreSQL数据库在后续发展中比较重要的方向，也算把握PostgreSQL的未来。">
 <meta property="og:locale" content="zh_CN">
-<meta property="article:published_time" content="2020-08-14T15:40:53.000Z">
-<meta property="article:modified_time" content="2020-08-14T15:45:18.000Z">
+<meta property="article:published_time" content="2021-12-15T15:39:28.000Z">
+<meta property="article:modified_time" content="2021-12-15T15:44:33.000Z">
 <meta property="article:author" content="张树杰">
+<meta property="article:tag" content="PostgreSQL 数据库 发展 历史">
 <meta name="twitter:card" content="summary">
 
-<link rel="canonical" href="http://zhangshujie.cn/2020/08/14/postgresql-optimizer-outline-5/">
+<link rel="canonical" href="http://zhangshujie.cn/2021/12/15/postgresql-history-now-future-pgconf2021vedio/">
 
 
 <script id="page-configurations">
@@ -45,7 +46,7 @@
   };
 </script>
 
-  <title>PostgreSQL优化器白话(5) - 严格要求自己 | 张树杰</title>
+  <title>【视频】PostgreSQL的过去、现在和将来 | 张树杰</title>
   
 
 
@@ -156,7 +157,7 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="http://zhangshujie.cn/2020/08/14/postgresql-optimizer-outline-5/">
+    <link itemprop="mainEntityOfPage" href="http://zhangshujie.cn/2021/12/15/postgresql-history-now-future-pgconf2021vedio/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/avatar.jpg">
@@ -169,7 +170,7 @@
     </span>
       <header class="post-header">
         <h1 class="post-title" itemprop="name headline">
-          PostgreSQL优化器白话(5) - 严格要求自己
+          【视频】PostgreSQL的过去、现在和将来
         </h1>
 
         <div class="post-meta">
@@ -180,7 +181,7 @@
               <span class="post-meta-item-text">发表于</span>
               
 
-              <time title="创建时间：2020-08-14 23:40:53 / 修改时间：23:45:18" itemprop="dateCreated datePublished" datetime="2020-08-14T23:40:53+08:00">2020-08-14</time>
+              <time title="创建时间：2021-12-15 23:39:28 / 修改时间：23:44:33" itemprop="dateCreated datePublished" datetime="2021-12-15T23:39:28+08:00">2021-12-15</time>
             </span>
 
           
@@ -194,39 +195,9 @@
     <div class="post-body" itemprop="articleBody">
 
       
-        <p>小明被大明将了一军，于是心里开始合计起来，假如是外连接，可能会对某一方补NULL值，这样的话TEACHER.tno = COURSE.tno这样的约束条件就无法构成等价类了啊，然后小在电脑上默默的敲了一个SQL语句：<a id="more"></a></p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">SELECT sname FROM TEACHER t LEFT JOIN COURSE c ON t.tno &#x3D; 5 AND t.tno &#x3D; c.tno;</span><br></pre></td></tr></table></figure>
+        <p>【PGConf2021】这里给大家分享的是PostgreSQL发展历史中的一些比较大的特性，通过这些重要特性，能够看出它是如何逐步发展为世界上最先进的开源数据库的，另外，通过了解这些特性，也能了解PostgreSQL的当前的整体架构，从架构视角检视一个数据库实现的必备属性，最后，我们从未来发展的角度列举几个PostgreSQL数据库在后续发展中比较重要的方向，也算把握PostgreSQL的未来。</p>
 
-<p>然后小明发现不但等价类可能产生不了了，而且选择下推也无法进行了，于是说：“这个语句中的TEACHER.tno=5不能下推了，因为左连接的语义是外表的所有的数据都要输出出来，如果把TEACHER.tno=5下推到TEACHER表上，那就会在做左连接之前先对TEACHER表做过滤，导致查询结果的不等价，而且由于补NULL值，等价类也生成不了了。”</p>
-<p>大明说：“对的，小明同学你理解的很快，由于外连接补NULL值的关系，确实导致无法做谓词下推，不过你可以看一下下面的这个语句，看看有什么区别。”然后大明在电脑里输入了另一个类似的SQL语句：</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">SELECT sname FROM TEACHER t LEFT JOIN COURSE c ON TRUE WHERE t.tno &#x3D; 5 AND t.tno &#x3D; c.tno;</span><br></pre></td></tr></table></figure>
-
-<p>小明仔细的观察上面的例句和当前这个例句，发现约束条件一个处在ON后面，另一个是处在WHERE后面，小明好像还不是很理解他们的含义，于是向大明投去了咨询的目光。大明说：“我们粗略的分一下，ON后面的约束条件是连接条件，WHERE后面的约束条件是过滤条件，连接条件和过滤条件是不同的。”</p>
-<p>小明好像悟到了什么，抢着说：“我知道了，一个是连接中的，一个是连接后的，可以这么理解吧？你看，连接条件会参与到连接操作的过程中，满足连接条件的会显示出来，不满足连接条件的，根据连接的类型还会决定是否补NULL值，而过滤条件是在连接操作之后对连接的结果进行过滤。。。”小明又对大明投去了期待的眼神，这种眼神是期望得到一点肯定，大明笑着说：“对，可以这么理解。”</p>
-<p>小明赶紧说：“你先别讲，让我看看这个带有过滤条件的SQL语句是不是能下推。”，然后小明对着这个SQL语句仔细观察起来，口中念念有词，似乎是已经走火入魔了。</p>
-<p>小明观察了半天，好无收获，只好说：“我掐指一算，觉得这个约束条件是能下推的，而且等价类也能建立起来。”</p>
-<p>“为什么？”大明追问道。</p>
-<p>“不为什么，我脑海中灵光乍现，我是一个佛系的程序员。”</p>
-<p>“你果然没有人生的字典，想必你即使有人生字典，你也把羞耻二字给扣掉了。”</p>
-<p>小明笑着说：“是的，像我这样优秀的人，本该灿烂过一生啊。。。”</p>
-<p>大明看小明竟然唱起了歌，愤怒的说：“不要胡闹，再胡闹我就让你一杯敬自由，一杯敬死亡。。。”大明停顿了一下，继续说道：“实际上这里还有一个严格的概念，什么叫严格呢？一个表达式，如果它的输入是NULL并且输出也是NULL，那么我们就说这个表达式是严格的，另外我们可以扩展一下严格的定义，从而定义出一个叫做‘宽泛的严格’的概念，就是说如果一个表达式它的输入是NULL，它的输出是NULL或者false，那么我们就说它符合宽泛的严格。”</p>
-<p>“那么严格有什么用呢？”</p>
-<p>“如果对一个元组应用约束条件，如果约束条件求值返回的是NULL值或者FALSE，实际上代表的是这一条元组不输出，明白吗？”<br>“哦，那就是说我们补的NULL值如果遇到这种过滤条件，就不会输出出来喽。”小明停了一下，突然想到了些什么，继续问道，“那这种外连接还补NULL值干嘛，岂不是没有什么卵用了？”</p>
-<p>“对头，这就是外连接消除的基本原理，遇上这种严格的约束条件，外连接补的NULL值没有什么用，那也就转变成内连接就好了。问题来了，如果变成了内连接，我们又能肆意妄为的选择下推、没羞没臊的做等价推理了，惊不惊喜，意不意外？”</p>
-<p>“哈哈，那你能给我一个不严格的例子不？让我见识一下不严格的表达式。”</p>
-<p>“比如说IS NOT NULL，输入是NULL值，输出竟然是TRUE，还有COALESCE函数，输入是NULL值，输出是啥随你定。”</p>
-<p>小明说：“看来表达式是否严格是很重要的一个概念，通过这个概念我们能做外连接消除，外连接消除又能够导致选择能够下推。。。这我就明白了为什么要做外连接消除了。”</p>
-<p>“嗯，外连接消除不只是将外连接转换成内连接，其实还有一种情况，它也和我们要说的表达式的条件是否严格有关，那就是可以将外连接转换成AntiJoin，我们来看这样一个例子。”</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">SELECT * FROM STUDENT LEFT JOIN SCORE ON STUDENT.sno &#x3D; SCORE.sno WHERE SCORE.sno IS NULL;</span><br></pre></td></tr></table></figure>
-
-<p>“由于STUDENT.sno = SCORE.sno是严格的，而且是连接条件，这样在连接的过程中他会将在STUDENT表和SCORE表中原有的NULL值去除掉，反而由于SOCRE.sno IS NULL是过滤条件，它起到了过滤作用，会将外连接补充NULL值的数据全部保留下来，这个语句的执行结果实际上就相当于做了一个Anti Join，因此这个语句可以转换成为Anti Join，它转换的结果相当于下面这个语句。”大明在电脑上敲出了等价语句，啪啪啪。。。</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">SELECT * FROM STUDENT ANTI JOIN SCORE ON STUDENT.sno &#x3D; SCORE.sno</span><br></pre></td></tr></table></figure>
-
-<p>“不过需要注意，SQL语法中是没有ANTI JOIN的，这只是一个等价的语句，但是它无法直接执行。另外在外连接消除的阶段还有一个“很重大”的举措，就是把左外连接全部转换成了右外连接，这样就可以在后续的代码中少处理一种情况，简化了后面的代码逻辑。”</p>
-<p>“严格果然是太有用了，可是我怎么知道一个表达式是不是严格呢？”</p>
-<p>“对于函数而言，在PG_PROC系统表中的proisstrict列属性代表了当前函数是否严格，如果是操作符表达式，在PostgreSQL数据库中操作符实际都转成了对应的函数，因此也可以用proisstrict来表示是否严格，而对基于IS [NOT] NULL产生的NullTest表达式需要单独处理，其中IS NOT NULL是严格的，IS NULL是不严格的，大体上我们可以分成这么几类。”</p>
-<p>小明感觉自己今天好像学到了好多知识，幸好自己有个哥哥，不然很难有人这么教自己，于是发自内心的说：“OK，我又增加了新的知识，谢谢。”</p>
-<p>“不要谢我，我是雷锋，我们都是在为中华之崛起而读书，想想我们可是社会主义接班人啊。。。”大明感觉自己胸前的仿佛有红领巾在迎风飘扬，而且更加鲜艳了。</p>
+<iframe src="//player.bilibili.com/player.html?aid=294767092&bvid=BV1xF411z7TB&cid=461767114&page=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"> </iframe>
 
     </div>
 
@@ -242,7 +213,7 @@
   </li>
   <li class="post-copyright-link">
     <strong>本文链接：</strong>
-    <a href="http://zhangshujie.cn/2020/08/14/postgresql-optimizer-outline-5/" title="PostgreSQL优化器白话(5) - 严格要求自己">http://zhangshujie.cn/2020/08/14/postgresql-optimizer-outline-5/</a>
+    <a href="http://zhangshujie.cn/2021/12/15/postgresql-history-now-future-pgconf2021vedio/" title="【视频】PostgreSQL的过去、现在和将来">http://zhangshujie.cn/2021/12/15/postgresql-history-now-future-pgconf2021vedio/</a>
   </li>
   <li class="post-copyright-license">
     <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
@@ -252,6 +223,9 @@
 
 
       <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/PostgreSQL-%E6%95%B0%E6%8D%AE%E5%BA%93-%E5%8F%91%E5%B1%95-%E5%8E%86%E5%8F%B2/" rel="tag"># PostgreSQL 数据库 发展 历史</a>
+          </div>
 
         
 
@@ -259,13 +233,10 @@
         
     <div class="post-nav">
       <div class="post-nav-item">
-    <a href="/2020/08/05/postgresql-optimizer-outline-4/" rel="prev" title="PostgreSQL优化器白话(4) - 下推！下推！">
-      <i class="fa fa-chevron-left"></i> PostgreSQL优化器白话(4) - 下推！下推！
+    <a href="/2021/10/07/postgresql-lock-vedio/" rel="prev" title="【视频】PostgreSQL中的锁">
+      <i class="fa fa-chevron-left"></i> 【视频】PostgreSQL中的锁
     </a></div>
-      <div class="post-nav-item">
-    <a href="/2020/10/03/postgresql-optimizer-outline-6/" rel="next" title="PostgreSQL优化器白话(6) - 统计局旁的泉水">
-      PostgreSQL优化器白话(6) - 统计局旁的泉水 <i class="fa fa-chevron-right"></i>
-    </a></div>
+      <div class="post-nav-item"></div>
     </div>
       </footer>
     
